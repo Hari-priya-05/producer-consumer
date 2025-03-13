@@ -1,0 +1,52 @@
+# include <stdio.h>
+# include <stdlib.h>
+# include <sys/ipc.h>
+# include <sys/shm.h>
+# include <semaphore.h>
+# include <fcntl.h>
+# include <unistd.h>
+
+# define BUFFER_SIZE 5
+
+typedef struct {
+    int buffer[BUFFER_SIZE];
+    int count;
+    sem_t mutex;
+    sem_t empty;
+    sem_t full;
+} SharedMemory;
+
+int main() {
+    key_t key = ftok("shmfile", 65);
+    int shmid = shmget(key, sizeof(SharedMemory), 0666 | IPC_CREAT);
+    SharedMemory* shm = (SharedMemory*)shmat(shmid, NULL, 0);
+
+    // Initialize semaphores (only first time)
+    sem_init(&shm->mutex, 1, 1);
+    sem_init(&shm->empty, 1, BUFFER_SIZE);
+    sem_init(&shm->full, 1, 0);
+    shm->count = 0;
+
+    int total_items;
+    printf("Enter number of items to produce: ");
+    scanf("%d", &total_items);
+
+    for (int i = 1; i <= total_items; i++) {
+        sem_wait(&shm->empty);  // Wait if buffer is full
+        sem_wait(&shm->mutex);  // Lock
+
+        // Produce an item
+        shm->buffer[shm->count] = i;
+        printf("Produced: %d\n", i);
+        shm->count++;
+
+        sem_post(&shm->mutex);  // Unlock
+        sem_post(&shm->full);   // Signal consumer
+
+        sleep(1); // Simulate delay
+    }
+
+    shmdt(shm);  // Detach shared memory
+    printf("Production completed..!!");
+    return 0;
+}
